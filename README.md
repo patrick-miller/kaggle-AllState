@@ -1,4 +1,4 @@
-ProjectEuler-pmiller
+kaggle-AllState
 ====================
 
-Project Euler code
+All State Competition
