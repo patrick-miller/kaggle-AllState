@@ -6,3 +6,11 @@
 
 # R data files from past sessions
 .Rdata
+
+#Models and computed data
+model*
+distribution_mapping.csv
+features.csv
+test_features.csv
+shopping_train.csv
+*.pdf

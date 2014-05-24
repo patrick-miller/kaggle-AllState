@@ -1,19 +1,31 @@
+# setwd("Kaggle/AllState/R")
+
 library("dplyr")
 library("caret")
 library("gbm")
-  
-FileDir <- "data"
-  
+
+source("../../../PWMisc/R/UtilitySources.r")
+source("../../../PWMisc/R/Graphics.r")
+
+FileDir <- "../data"
+
+minDays <- 2
+
 rCombn <- combn(7, 2)
 rLetters <- c("A", "B", "C", "D", "E", "F", "G")
 rCombnLetters <- apply(rCombn, 2, function(ccc) paste0(rLetters[ccc], collapse=""))
 response_vars <- c("customer_ID", paste0("purchase_", c(rLetters, rCombnLetters)))
   
+###############################################################################
+#
+# exploreDistributions -
+#
+###############################################################################
 
-exploreDistributions <- function(FileDir="data"){
+exploreDistributions <- function(FileDir="../data"){
   
   #
-  # Randomly truncate the data so that it looks more like the test data
+  # Truncate the data so that it looks more like the test data
   # 
   
   #
@@ -37,11 +49,11 @@ exploreDistributions <- function(FileDir="data"){
     sum(shopping_point_dat$customer_ID==x)
   })  
   
-  distrib_test_center <- distrib_test - 2
-  distrib_train_center <- distrib_train - 2
+  distrib_test_center <- distrib_test - minDays
+  distrib_train_center <- distrib_train - minDays
   
   #
-  # MLEs
+  # Test some distributions
   #
   
   samps <- length(distrib_test_center)
@@ -49,7 +61,6 @@ exploreDistributions <- function(FileDir="data"){
   
   #Geometric - number of shopping points before a purchase point
   #Poisson - number of shopping points given a rate
-  #Gamma - flexibility
   
   geom_LL <- function(p, xxx) -sum(dgeom(xxx, p, log=TRUE))
   pois_LL <- function(lambda, xxx) -sum(dpois(xxx, lambda, log=TRUE))
@@ -159,7 +170,13 @@ exploreDistributions <- function(FileDir="data"){
   write.csv(output_dat, paste0(FileDir, "/shopping_train.csv"), row.names=FALSE)
 }
 
-createFeatures <- function(FileDir="data", train=TRUE){
+###############################################################################
+#
+# createFeatures -
+#
+###############################################################################
+
+createFeatures <- function(FileDir="../data", train=TRUE){
   
   if(train){
   
@@ -168,18 +185,21 @@ createFeatures <- function(FileDir="data", train=TRUE){
     shopping_point_dat <- dat[dat$record_type==0, ]
     purchase_point_dat <- dat[dat$record_type==1, ]
     
+    purchase_point_dat$time <- as.POSIXct(paste(Sys.Date(), purchase_point_dat$time))
+    
     #
     # Get the truncated training data
     #
     
-    shopping_point_dat <- read.csv(paste0(FileDir, "/shopping_train.csv"))
-    shopping_point_dat$time <- as.POSIXct(shopping_point_dat$time)
+    Extension <- "/shopping_train.csv"
     
   }else{ #Test
     
-    shopping_point_dat <- read.csv(paste0(FileDir, "/test_v2.csv"))
-    shopping_point_dat$time <- as.POSIXct(paste(Sys.Date(), shopping_point_dat$time))
+    Extension <- "/test_v2.csv"
   }
+  
+  shopping_point_dat <- read.csv(paste0(FileDir, Extension))
+  shopping_point_dat$time <- as.POSIXct(paste(Sys.Date(), shopping_point_dat$time))
   
   #
   # Create cross sectional feature set
@@ -269,11 +289,7 @@ createFeatures <- function(FileDir="data", train=TRUE){
   }
     
   if(train){
-  
-    rCombn <- combn(7, 2)
-    rLetters <- c("A", "B", "C", "D", "E", "F", "G")
-    rCombnLetters <- apply(rCombn, 2, function(ccc) paste0(rLetters[ccc], collapse=""))
-    
+      
     for(ccc in 1:ncol(rCombn)){
       
       pair <- rLetters[rCombn[, ccc]]
@@ -295,7 +311,6 @@ createFeatures <- function(FileDir="data", train=TRUE){
     #
     # Save features data.frame
     #
-    browser()
     
     if(!file.exists(paste0(FileDir, "/model_changedMind.rds"))){
       write.csv(all_dat, paste0(FileDir, "/features.csv"), row.names=FALSE)
@@ -327,7 +342,13 @@ createFeatures <- function(FileDir="data", train=TRUE){
   
 }
 
-predictMindChanges <- function(FileDir="data"){
+###############################################################################
+#
+# predictMindChanges -
+#
+###############################################################################
+
+predictMindChanges <- function(FileDir="../data"){
     
   dat <- read.csv(paste0(FileDir, "/train.csv"), stringsAsFactors=TRUE)
   all_dat <- read.csv(paste0(FileDir, "/features.csv"), stringsAsFactors=TRUE)
@@ -340,7 +361,13 @@ predictMindChanges <- function(FileDir="data"){
   saveRDS(model_changedMind, paste0(FileDir, "/model_changedMind.rds"))
 }
 
-buildModels <- function(FileDir="data"){
+###############################################################################
+#
+# buildModels -
+#
+###############################################################################
+
+buildModels <- function(FileDir="../data"){
   
   print(paste0(Sys.time(), ": Building models."))
   
@@ -399,7 +426,7 @@ buildModels <- function(FileDir="data"){
   shrinkage <- 0.05
   
   
-  for(ndxResponse in c(2:length(response_vars))){
+  for(ndxResponse in c(13:length(response_vars))){
     
     #Set up the data frame for training
     resp_nm <- names(response_train)[ndxResponse]
@@ -426,6 +453,8 @@ buildModels <- function(FileDir="data"){
     
     preds_gbm <- to_predictions(probs_gbm)
     
+    levels(preds_gbm) <- levels(response_test[, ndxResponse])
+    
     conf_matrix_gbm <- confusionMatrix(preds_gbm, response_test[, ndxResponse])
     
 #       models[[ndxResponse - 1]] <- model_gbm
@@ -446,21 +475,23 @@ buildModels <- function(FileDir="data"){
   print(paste0(Sys.time(), ": Finished building models."))
 }
 
-examineModelFeatures <- function(FileDir="data"){
-  
-  #Set the response variables
-  rCombn <- combn(7, 2)
-  rLetters <- c("A", "B", "C", "D", "E", "F", "G")
-  rCombnLetters <- apply(rCombn, 2, function(ccc) paste0(rLetters[ccc], collapse=""))
-  response_vars <- c(paste0("purchase_", c(rLetters, rCombnLetters)))
-  
-  
-  model_dat <- lapply(response_vars, function(rrr){
+###############################################################################
+#
+# examineModelFeatures -
+#
+###############################################################################
+
+examineModelFeatures <- function(FileDir="../data"){
+    
+  model_dat <- lapply(response_vars[-1], function(rrr){
     readRDS(paste0(FileDir, "/model-", rrr, ".rds"))
   })
   
-  names(model_dat) <- response_vars
+  names(model_dat) <- response_vars[-1]
   
+  #TODO: change to dplyr
+  
+  library("plyr")
   variable_importance <- ldply(names(model_dat), function(mNm){
     mmm <- model_dat[[mNm]]
     summ_dat <- data.frame(summary(mmm$Models))
@@ -475,31 +506,27 @@ examineModelFeatures <- function(FileDir="data"){
   
 }
 
-examineModels <- function(FileDir="data"){
+###############################################################################
+#
+# examineModels -
+#
+###############################################################################
 
-  #
-  #Get the test set of the data
-  #
+examineModels <- function(FileDir="../data"){
   
+  #Get the model data
+  model_dat <- lapply(response_vars[-1], function(rrr){
+    readRDS(paste0(FileDir, "/model-", rrr, ".rds"))
+  })
+  names(model_dat) <- response_vars[-1]
+  
+  test_IDs <- model_dat[[1]]$TestIDs
+  
+  #Get the test set of the data
   all_dat <- read.csv(paste0(FileDir, "/features.csv"), stringsAsFactors=TRUE)
   
   dat <- all_dat[is.element(all_dat$customer_ID, test_IDs), ]
   
-  
-  #Set the response variables
-  rCombn <- combn(7, 2)
-  rLetters <- c("A", "B", "C", "D", "E", "F", "G")
-  rCombnLetters <- apply(rCombn, 2, function(ccc) paste0(rLetters[ccc], collapse=""))
-  response_vars <- c(paste0("purchase_", c(rLetters, rCombnLetters)))
-
-  #Get the model data
-  model_dat <- lapply(response_vars, function(rrr){
-    readRDS(paste0(FileDir, "/model-", rrr, ".rds"))
-  })
-  names(model_dat) <- response_vars
-  
-  test_IDs <- model_dat[[1]]$TestIDs
-
   #Predictions
   single_predictions <- as.data.frame(sapply(model_dat, function(x) return(x$Preds)))
   names(single_predictions) <- paste0("pred_", names(single_predictions))
@@ -632,13 +659,19 @@ examineModels <- function(FileDir="data"){
   
 }
 
-exploreMisses <- function(FileDir="data"){
+###############################################################################
+#
+# exploreMisses -
+#
+###############################################################################
+
+exploreMisses <- function(FileDir="../data"){
   
   #Get the model data
-  model_dat <- lapply(response_vars, function(rrr){
+  model_dat <- lapply(response_vars[-1], function(rrr){
     readRDS(paste0(FileDir, "/model-", rrr, ".rds"))
   })
-  names(model_dat) <- response_vars
+  names(model_dat) <- response_vars[-1]
   
   test_IDs <- model_dat[[1]]$TestIDs
 
@@ -786,7 +819,7 @@ exploreMisses <- function(FileDir="data"){
     names(newdat)[1] <- "variable"
       
       
-    ggplot(newdat, aes(variable, fill=dist)) + 
+    ggplot(newdat, aes(x=variable, fill=dist)) + 
       geom_histogram(alpha = 0.4, color="black",
         aes(y = ..density..), position = 'identity') +
       scale_fill_brewer(palette="Set1") +
@@ -809,7 +842,7 @@ exploreMisses <- function(FileDir="data"){
     dd <- melt(newdat, "factor")
       
     ggplot(dd, aes(x=factor, y=value, fill=variable)) + 
-      geom_bar(alpha = 0.4, color="black", position='identity') +
+      geom_bar(alpha = 0.4, color="black", stat='identity') +
       scale_y_continuous(labels=percent) +
       scale_fill_brewer(palette="Set1") +
       theme_standard + labs(x=var_name, y=NULL, 
@@ -897,25 +930,25 @@ exploreMisses <- function(FileDir="data"){
   
 }
 
-generatePredictions <- function(CalcPredictions=FALSE, lProb=0.525,
-  hProb=0.8, FileDir="data"){
+###############################################################################
+#
+# generatePredictions -
+#
+###############################################################################
+
+generatePredictions <- function(CalcPredictions=TRUE, lProb=0.525,
+  hProb=0.8, FileDir="../data"){
   
   if(CalcPredictions){
     
-    #Set the response variables
-    rCombn <- combn(7, 2)
-    rLetters <- c("A", "B", "C", "D", "E", "F", "G")
-    rCombnLetters <- apply(rCombn, 2, function(ccc) paste0(rLetters[ccc], collapse=""))
-    response_vars <- c(paste0("purchase_", c(rLetters, rCombnLetters)))
-  
     #Get the test data
     test_dat <- read.csv(paste0(FileDir, "/test_features.csv"), stringsAsFactors=TRUE)    
     
     #Load in the models
-    models <- lapply(response_vars, function(rrr){
+    models <- lapply(response_vars[-1], function(rrr){
       readRDS(paste0(FileDir, "/model-", rrr, ".rds"))$Model
     })
-    names(models) <- response_vars
+    names(models) <- response_vars[-1]
     
     feature_names <- rownames(summary(models[[1]]))
     
@@ -959,13 +992,24 @@ generatePredictions <- function(CalcPredictions=FALSE, lProb=0.525,
   browser()
 }
 
+###############################################################################
+#
+# to_predictions -
+#
+###############################################################################
+
 to_predictions <- function(probs){
  return(as.factor(colnames(probs)[apply(probs, 1, function(x) which.max(x))]))
 }
 
+###############################################################################
+#
+# create_full_predictions -
+#
+###############################################################################
+
 create_full_predictions <- function(raw_predictions, features_dat, lProb=0.525, hProb=0.8){
   
-  rLetters <- c("A", "B", "C", "D", "E", "F", "G")
   preds_last <- features_dat[, paste0("last_", rLetters)]
   
   preds_median <- as.data.frame(sapply(rLetters, function(lll){
@@ -975,8 +1019,7 @@ create_full_predictions <- function(raw_predictions, features_dat, lProb=0.525, 
   preds_count <- preds_last
   preds_count[features_dat$count <= 2, ] <- preds_median[features_dat$count <= 2, ]
   
-  
-  
+    
   preds_output <- preds_count
   preds_output[features_dat$prob_mind_changed < lProb, ] <- 
     preds_last[features_dat$prob_mind_changed < lProb, ]
@@ -989,3 +1032,4 @@ create_full_predictions <- function(raw_predictions, features_dat, lProb=0.525, 
   
   return(preds_output)
 }
+
